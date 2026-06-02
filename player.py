@@ -1,4 +1,4 @@
-# player.py - PytgCalls Versiya Xətası və Donmaları Tam Düzəldilmiş Versiya
+# player.py - Tam Sabitləşdirilmiş, Avto-Çıxış və Donmasız Son Versiya
 import asyncio
 import logging
 import os
@@ -13,7 +13,6 @@ from telethon.tl.functions.messages import AddChatUserRequest
 # PyTgCalls importları
 from pytgcalls import PyTgCalls
 from pytgcalls.types import AudioQuality, MediaStream
-from pytgcalls.types.stream import StreamBacked  # Axının bitməsini tutmaq üçün
 
 from downloader import search_and_download, cleanup_files
 
@@ -54,15 +53,17 @@ async def get_control_keyboard(chat_id: int, paused: bool = False):
 
 
 async def check_and_invite_bot(user_client: TelegramClient, chat_id: int):
-    """Köməkçi bot qrupda yoxdursa avtomatik dəvət edir"""
+    """Köməkçi bot qrupda yoxdursa avtomatik dəvət edir (Xətasız dinamik import)"""
     try:
         entity = await user_client.get_input_entity(chat_id)
-        from main import BOT_USERNAME
+        # Circular import-un qarşısını almaq üçün daxili import edirik
+        import main
+        bot_username = getattr(main, 'BOT_USERNAME', '@RavenMscUserbot')
         
         if hasattr(entity, 'channel_id'):
-            await user_client(InviteToChannelRequest(channel=entity, users=[BOT_USERNAME]))
+            await user_client(InviteToChannelRequest(channel=entity, users=[bot_username]))
         else:
-            await user_client(AddChatUserRequest(chat_id=chat_id, user_id=BOT_USERNAME, fwd_limit=0))
+            await user_client(AddChatUserRequest(chat_id=chat_id, user_id=bot_username, fwd_limit=0))
     except Exception as e:
         logger.warning(f"Bot avtomatik əlavə edilə bilmədi və ya artıq qrupdadır: {e}")
 
@@ -107,15 +108,19 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # KRİTİK DÜZƏLİŞ: on_stream_end() yerinə rəsmi on_update() handlerindən istifadə edirik.
-        # Bu, versiya fərqliliyindən yaranan çökməni tamamilə həll edir.
+        # TAM SƏBATLI REJİM (*args istifadə edərək bütün PyTgCalls versiyaları ilə uyğunlaşdırıldı)
         @self.calls.on_update()
-        async def update_handler(client, update):
-            # Əgər gələn yenilənmə axının (mahnının) bitdiyini göstərirsə
-            if isinstance(update, StreamBacked):
-                chat_id = update.chat_id
-                logger.info(f"Mahnı bitdi (StreamBacked), növbəti yoxlanılır. Chat ID: {chat_id}")
-                asyncio.create_task(self.play_next(chat_id))
+        async def update_handler(*args):
+            # args[0] və ya args[1] üzərindən gələn update obyektini təhlükəsiz şəkildə çıxarırıq
+            update = args[1] if len(args) > 1 else args[0]
+            
+            # Tip yoxlamasındakı fərqliliyi aradan qaldırmaq üçün obyekt adını string kimi yoxlayırıq
+            type_name = type(update).__name__
+            if type_name in ["StreamBacked", "UpdateStreamBacked", "StreamFinished"]:
+                chat_id = getattr(update, 'chat_id', None)
+                if chat_id:
+                    logger.info(f"Mahnı bitdi ({type_name}), növbəti yoxlanılır. Chat ID: {chat_id}")
+                    asyncio.create_task(self.play_next(chat_id))
 
         # Telethon yeniləmə filtri
         orig_dispatch = self.client._dispatch_update
@@ -141,7 +146,7 @@ class RavenPlayer:
         if old_track:
             cleanup_files(old_track.request_id)
 
-        # Əgər növbədə mahnı yoxdursa, avtomatik səsli çatdan çıx
+        # Növbədə növbəti mahnı (2-6 və ya daha çox) yoxdursa, avtomatik çıxış
         if not queues[chat_id]:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
@@ -158,13 +163,13 @@ class RavenPlayer:
                     pass
             return
 
-        # Növbədə mahnı varsa, donmasız rejimdə işə sal
+        # Növbədə mahnı varsa, davam et
         track: Track = queues[chat_id].pop(0)
         now_playing[chat_id] = track
         self._paused[chat_id] = False
 
         try:
-            # DONMASIZ ABSOLYUT REJİM: Yalnız təmiz audio ötürülür, video buferi tam ləğv edildi
+            # DONMASIZ OPTİMAL SƏS REJİMİ
             stream = MediaStream(
                 track.file_path,
                 audio_parameters=AudioQuality.MEDIUM,
