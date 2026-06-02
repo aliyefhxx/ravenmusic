@@ -8,7 +8,7 @@ from typing import Optional
 
 from telethon import TelegramClient, Button
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream
+from pytgcalls.types import MediaStream, AudioQuality, VideoQuality
 
 from downloader import search_and_download, cleanup_files
 
@@ -39,7 +39,6 @@ class Track:
 
 async def get_control_keyboard(chat_id: int, paused: bool = False):
     play_pause = "⏸ Durdur" if not paused else "▶️ Davam"
-    # Düymələr Telethon rəsmi formatına keçirildi
     return [
         [
             Button.inline("⏮ Geri", data=f"prev_{chat_id}"),
@@ -102,6 +101,18 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
+        # Telethon-un daxili "UpdateGroupCall" çatışmazlıq xətasını (chat_id xətası)
+        # arxa planda süzgəcdən keçirmək üçün raw yeniləmə funksiyasını manipulyasiya edirik.
+        orig_dispatch = self.client._dispatch_update
+        async def safe_dispatch(update, others):
+            if type(update).__name__ == 'UpdateGroupCall' and not hasattr(update, 'chat_id'):
+                return
+            try:
+                await orig_dispatch(update, others)
+            except Exception:
+                pass
+        self.client._dispatch_update = safe_dispatch
+
     async def start(self):
         await self.calls.start()
         logger.info("PyTgCalls (Telethon ilə) başladı")
@@ -128,16 +139,18 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
+            # NO_VIDEO flag-i yerinə, AudioQuality və VideoQuality parametrlərini təyin edirik.
+            # Əgər video yoxdursa, video parametrini boş buraxırıq ki, NO_VIDEO xətası verməsin.
             if track.thumbnail and os.path.exists(track.thumbnail):
                 stream = MediaStream(
                     track.file_path,
-                    track.thumbnail,
-                    video_flags=MediaStream.Flags.HAS_VIDEO
+                    audio_parameters=AudioQuality.HIGH,
+                    video_parameters=VideoQuality.THUMBNAIL
                 )
             else:
                 stream = MediaStream(
                     track.file_path,
-                    video_flags=MediaStream.Flags.NO_VIDEO
+                    audio_parameters=AudioQuality.HIGH
                 )
 
             try:
@@ -168,7 +181,6 @@ class RavenPlayer:
 
         active_searches[chat_id] += 1
         try:
-            # downloader.py faylından mahnını tam çəkirik
             result = await search_and_download(client, song_name, request_id)
             if not result or not result["file_path"]:
                 return False
