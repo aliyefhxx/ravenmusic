@@ -1,4 +1,4 @@
-# player.py - Ses idarəetməsi (pytgcalls)
+# player.py - Ses idarəetməsi (Telethon + pytgcalls v2)
 import asyncio
 import logging
 import os
@@ -6,11 +6,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
 
-from pyrogram import Client
+from telethon import TelegramClient
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream
-
 
 from downloader import search_and_download, cleanup_files
 
@@ -54,7 +53,7 @@ async def get_control_keyboard(chat_id: int, paused: bool = False) -> InlineKeyb
     ])
 
 
-async def send_now_playing(client: Client, chat_id: int, track: Track):
+async def send_now_playing(client, chat_id: int, track: Track):
     """İnline buttonlarla 'İndi oxunur' mesajı göndər"""
     keyboard = await get_control_keyboard(chat_id)
     caption = (
@@ -72,18 +71,19 @@ async def send_now_playing(client: Client, chat_id: int, track: Track):
             except Exception:
                 pass
 
+        # Telethon client-ı ilə mesaj göndərmə dəstəyi
         if track.thumbnail and os.path.exists(track.thumbnail):
-            msg = await client.send_photo(
+            msg = await client.send_file(
                 chat_id,
-                photo=track.thumbnail,
+                file=track.thumbnail,
                 caption=caption,
-                reply_markup=keyboard
+                buttons=keyboard
             )
         else:
             msg = await client.send_message(
                 chat_id,
-                text=caption,
-                reply_markup=keyboard
+                message=caption,
+                buttons=keyboard
             )
         control_messages[chat_id] = msg
     except Exception as e:
@@ -98,14 +98,15 @@ def format_duration(seconds: Optional[int]) -> str:
 
 
 class RavenPlayer:
-    def __init__(self, client: Client):
+    def __init__(self, client: TelegramClient):
         self.client = client
+        # pytgcalls v2-ni Telethon client-ı ilə işə salırıq
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
     async def start(self):
         await self.calls.start()
-        logger.info("PyTgCalls başladı")
+        logger.info("PyTgCalls (Telethon ilə) başladı")
 
     async def play_next(self, chat_id: int):
         """Queue-dan növbəti mahnını oxut"""
@@ -130,7 +131,6 @@ class RavenPlayer:
 
         try:
             if track.thumbnail and os.path.exists(track.thumbnail):
-                # v2-də birbaşa fayl yollarını vermək kifayətdir, default olaraq yüksək keyfiyyət seçilir
                 stream = MediaStream(
                     track.file_path,
                     track.thumbnail,
@@ -159,7 +159,7 @@ class RavenPlayer:
 
     async def add_to_queue(
         self,
-        client: Client,
+        client,
         chat_id: int,
         song_name: str,
         request_id: str,
