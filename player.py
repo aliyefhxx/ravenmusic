@@ -1,4 +1,4 @@
-# player.py - Ses idarəetməsi (Telethon + pytgcalls v2)
+# player.py - Ses idarəetməsi (Telethon + pytgcalls v2 tam uyğun)
 import asyncio
 import logging
 import os
@@ -100,8 +100,7 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # DƏQİQ SÜZGƏC: Sadəcə chat_id-si olmayan xətalı UpdateGroupCall obyektini sıfırlayır,
-        # digər mesaj yeniləmələrinə (NewMessage, .play və s.) əsla mane olmur.
+        # Telethon daxili yeniləmə süzgəci
         orig_dispatch = self.client._dispatch_update
         async def safe_dispatch(update, others=None):
             if type(update).__name__ == 'UpdateGroupCall' and not hasattr(update, 'chat_id'):
@@ -125,7 +124,8 @@ class RavenPlayer:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
             try:
-                await self.calls.leave_group_call(chat_id)
+                # pytgcalls v2-də leave yerinə reject_call istifadə olunur
+                await self.calls.reject_call(chat_id)
             except Exception:
                 pass
             if chat_id in control_messages:
@@ -153,14 +153,8 @@ class RavenPlayer:
                     audio_parameters=AudioQuality.HIGH
                 )
 
-            try:
-                await self.calls.change_stream(chat_id, stream)
-            except Exception:
-                await self.calls.join_group_call(
-                    chat_id,
-                    stream
-                )
-
+            # pytgcalls v2-də həm qoşulmaq, həm də yayımı dəyişmək üçün sadəcə .play() bəs edir!
+            await self.calls.play(chat_id, stream)
             await send_now_playing(self.client, chat_id, track)
 
         except Exception as e:
@@ -222,7 +216,7 @@ class RavenPlayer:
         self._paused.pop(chat_id, None)
 
         try:
-            await self.calls.leave_group_call(chat_id)
+            await self.calls.reject_call(chat_id)
         except Exception:
             pass
 
