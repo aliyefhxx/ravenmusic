@@ -9,10 +9,9 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-# Telethon importları (Pyrogram əvəzinə)
+# Telethon importları
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from telethon.tl.custom import Button
 
 from keep_alive import app as fastapi_app
 from player import RavenPlayer, queues, now_playing, control_messages, get_control_keyboard
@@ -32,7 +31,6 @@ SESSION_STRING = os.environ["SESSION_STRING"]
 PORT = int(os.environ.get("PORT", 8000))
 
 # ── Telethon Client ───────────────────────────────────────────────
-# Səni hesabdan atmayan Telethon string sessiyası birbaşa buraya ötürülür
 userbot = TelegramClient(
     StringSession(SESSION_STRING),
     api_id=API_ID,
@@ -47,14 +45,15 @@ player: RavenPlayer | None = None
 #  KOMANDALAR
 # ═══════════════════════════════════════════════════════════════════
 
-@userbot.on(events.NewMessage(pattern=r"^\.play(?:\s+(.+))?", outgoing=True))
+# outgoing=True silindi, artıq hər kəs yaza bilər
+@userbot.on(events.NewMessage(pattern=r"^\.play(?:\s+(.+))?"))
 async def play_command(event: events.NewMessage.Event):
     """
     .play mahnı adı
     """
     song_name = event.pattern_match.group(1)
     if not song_name:
-        await event.reply("🎵 İstifadə: `.play mahnı adı`")
+        await event.respond("🎵 İstifadə: `.play mahnı adı`")
         return
 
     chat_id = event.chat_id
@@ -67,14 +66,15 @@ async def play_command(event: events.NewMessage.Event):
 
     # Queue dolubsa xəbərdarlıq
     if len(queues[chat_id]) >= 10:
-        await event.reply("⚠️ Queue doludur! Maksimum 10 mahnı.")
+        await event.respond("⚠️ Queue doludur! Maksimum 10 mahnı.")
         return
 
-    status_msg = await event.reply(f"🔍 **{song_name}** axtarılır...")
+    # respond istifadə edirik ki, replay etməsin, birbaşa mesaj yazsın
+    status_msg = await event.respond(f"🔍 **{song_name}** axtarılır...")
 
     request_id = str(uuid.uuid4())[:8]
 
-    # Telethon client-ı, chat_id və digər parametrlər pleyerə ötürülür
+    # Telethon client-ı pleyerə ötürülür
     success = await player.add_to_queue(
         userbot,
         chat_id,
@@ -89,22 +89,23 @@ async def play_command(event: events.NewMessage.Event):
         except Exception:
             pass
     else:
+        # Tapılmayanda mesajı edit edir
         await status_msg.edit(
             f"❌ **{song_name}** tapılmadı və ya yüklənmədi."
         )
 
 
-@userbot.on(events.NewMessage(pattern=r"^\.end", outgoing=True))
+@userbot.on(events.NewMessage(pattern=r"^\.end"))
 async def end_command(event: events.NewMessage.Event):
     """.end - oxumanı dayandır"""
     chat_id = event.chat_id
 
     if chat_id not in now_playing:
-        await event.reply("🔇 Hazırda heç nə oxunmur.")
+        await event.respond("🔇 Hazırda heç nə oxunmur.")
         return
 
     await player.end(chat_id)
-    await event.reply("⏹ Oxuma dayandırıldı, səsli chatdan çıxıldı.")
+    await event.respond("⏹ Oxuma dayandırıldı, səsli chatdan çıxıldı.")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -150,30 +151,17 @@ async def callback_handler(event: events.CallbackQuery.Event):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  SESSION STRING YARATMAQ (ilk dəfə)
-# ═══════════════════════════════════════════════════════════════════
-
-async def generate_session():
-    """Əgər SESSION_STRING yoxdursa, yeni session yarat"""
-    async with TelegramClient(StringSession(), API_ID, API_HASH) as app:
-        session = app.session.save()
-        print(f"\n✅ SESSION_STRING:\n{session}\n")
-
-
-# ═══════════════════════════════════════════════════════════════════
 #  ANA FUNKSIYA
 # ═══════════════════════════════════════════════════════════════════
 
 async def start_userbot():
     global player
-    # Telethon başlanğıcı
     await userbot.start()
     
     player = RavenPlayer(userbot)
     await player.start()
     logger.info("🎵 Raven Music Userbot (Telethon) işə düşdü!")
 
-    # FastAPI-ni idarə etmək üçün uvicorn server sazlaması
     config = uvicorn.Config(
         fastapi_app,
         host="0.0.0.0",
@@ -182,7 +170,6 @@ async def start_userbot():
     )
     server = uvicorn.Server(config)
 
-    # Telethon-da idle funksiyası run_until_disconnected ilə təmin edilir
     await asyncio.gather(
         server.serve(),
         userbot.run_until_disconnected()
@@ -190,7 +177,6 @@ async def start_userbot():
 
 
 if __name__ == "__main__":
-    # SESSION_STRING yoxdursa generate et
     if not os.environ.get("SESSION_STRING"):
         asyncio.run(generate_session())
     else:
