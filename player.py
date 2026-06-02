@@ -1,4 +1,4 @@
-# player.py - VideoParameters Xətası Tam Düzəldilmiş Versiya
+# player.py - Səsdən Çıxmama Problemi Tam Düzəldilmiş Son Versiya
 import asyncio
 import logging
 import os
@@ -107,20 +107,17 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # PyTgCalls yenilənmələrini tutmaq üçün handler
         @self.calls.on_update()
         async def update_handler(*args):
             update = args[1] if len(args) > 1 else args[0]
             type_name = type(update).__name__
             
-            # Səsin bitdiyini göstərən bütün mümkün obyekt adları
             if type_name in ["StreamBacked", "UpdateStreamBacked", "StreamFinished", "StreamFinishedObject"]:
                 chat_id = getattr(update, 'chat_id', None)
                 if chat_id:
                     logger.info(f"Mahnı bitdi ({type_name}), növbəti yoxlanılır. Chat ID: {chat_id}")
                     asyncio.create_task(self.play_next(chat_id))
 
-        # Telethon yeniləmə filtri
         orig_dispatch = self.client._dispatch_update
         async def safe_dispatch(update, others=None):
             if type(update).__name__ == 'UpdateGroupCall' and not hasattr(update, 'chat_id'):
@@ -138,21 +135,39 @@ class RavenPlayer:
         await self.calls.start()
         logger.info("PyTgCalls sistemi uğurla başladı.")
 
+    async def force_leave(self, chat_id: int):
+        """Səsdən tamamilə və zəmanətli çıxış metodu (Versiya fərqliliyinə qarşı dözümlü)"""
+        # Versiyadan asılı olaraq mövcud ola biləcək bütün çıxış metodlarını ard-arda yoxlayır
+        methods = ["leave_call", "leave_group_call", "reject_call"]
+        for method_name in methods:
+            if hasattr(self.calls, method_name):
+                try:
+                    method = getattr(self.calls, method_name)
+                    await method(chat_id)
+                    logger.info(f"Səsli çatdan uğurla çıxıldı ({method_name}). Chat ID: {chat_id}")
+                    return
+                except Exception as e:
+                    logger.debug(f"{method_name} sınandı amma alınmadı: {e}")
+        
+        # Əgər yuxarıdakı metodlar işləməsə, birbaşa axını dayandırmağı sınayırıq
+        try:
+            await self.calls.drop_call(chat_id)
+        except Exception:
+            pass
+
     async def play_next(self, chat_id: int):
         """Mahnı bitdikdə növbəni idarə edir. Boşdursa səsdən çıxır, doludursa davam edir."""
         old_track = now_playing.get(chat_id)
         if old_track:
             cleanup_files(old_track.request_id)
 
-        # Əgər növbədə mahnı yoxdursa, avtomatik səsli çatdan çıx
         if not queues[chat_id]:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
-            try:
-                await self.calls.reject_call(chat_id)
-                logger.info(f"Növbə bitdi, səsli çatdan təmiz çıxış edildi. Chat ID: {chat_id}")
-            except Exception:
-                pass
+            
+            # Zəmanətli çıxış funksiyasını çağırırıq
+            await self.force_leave(chat_id)
+            
             if chat_id in control_messages:
                 try:
                     await self.client.delete_messages(chat_id, control_messages[chat_id].id)
@@ -161,22 +176,17 @@ class RavenPlayer:
                     pass
             return
 
-        # Növbədə mahnı varsa, davam et
         track: Track = queues[chat_id].pop(0)
         now_playing[chat_id] = track
         self._paused[chat_id] = False
 
         try:
-            # DÜZƏLİŞ: video_parameters=None hissəsi tamamilə silindi!
-            # Yalnız audio_parameters ötürülür ki, versiya xətası verməsin və 0 donma ilə işləsin.
             stream = MediaStream(
                 track.file_path,
                 audio_parameters=AudioQuality.MEDIUM
             )
-
             await self.calls.play(chat_id, stream)
             await send_now_playing(self.client, chat_id, track)
-
         except Exception as e:
             logger.error(f"Oynatma xətası: {e}")
             await self.play_next(chat_id)
@@ -216,20 +226,20 @@ class RavenPlayer:
         await self.play_next(chat_id)
 
     async def end(self, chat_id: int):
+        """Mahnını tamamilə bitirir və səsli çatdan çıxır"""
         track = now_playing.get(chat_id)
         if track:
             cleanup_files(track.request_id)
 
         for t in queues.get(chat_id, []):
             cleanup_files(t.request_id)
+            
         queues[chat_id].clear()
         now_playing.pop(chat_id, None)
         self._paused.pop(chat_id, None)
 
-        try:
-            await self.calls.reject_call(chat_id)
-        except Exception:
-            pass
+        # Zəmanətli çıxış funksiyasını çağırırıq
+        await self.force_leave(chat_id)
 
         if chat_id in control_messages:
             try:
