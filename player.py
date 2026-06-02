@@ -1,4 +1,4 @@
-# player.py - Tam Sabitləşdirilmiş, Avto-Çıxış və Donmasız Son Versiya
+# player.py - VideoParameters Xətası Tam Düzəldilmiş Versiya
 import asyncio
 import logging
 import os
@@ -53,10 +53,9 @@ async def get_control_keyboard(chat_id: int, paused: bool = False):
 
 
 async def check_and_invite_bot(user_client: TelegramClient, chat_id: int):
-    """Köməkçi bot qrupda yoxdursa avtomatik dəvət edir (Xətasız dinamik import)"""
+    """Köməkçi bot qrupda yoxdursa avtomatik dəvət edir"""
     try:
         entity = await user_client.get_input_entity(chat_id)
-        # Circular import-un qarşısını almaq üçün daxili import edirik
         import main
         bot_username = getattr(main, 'BOT_USERNAME', '@RavenMscUserbot')
         
@@ -108,15 +107,14 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # TAM SƏBATLI REJİM (*args istifadə edərək bütün PyTgCalls versiyaları ilə uyğunlaşdırıldı)
+        # PyTgCalls yenilənmələrini tutmaq üçün handler
         @self.calls.on_update()
         async def update_handler(*args):
-            # args[0] və ya args[1] üzərindən gələn update obyektini təhlükəsiz şəkildə çıxarırıq
             update = args[1] if len(args) > 1 else args[0]
-            
-            # Tip yoxlamasındakı fərqliliyi aradan qaldırmaq üçün obyekt adını string kimi yoxlayırıq
             type_name = type(update).__name__
-            if type_name in ["StreamBacked", "UpdateStreamBacked", "StreamFinished"]:
+            
+            # Səsin bitdiyini göstərən bütün mümkün obyekt adları
+            if type_name in ["StreamBacked", "UpdateStreamBacked", "StreamFinished", "StreamFinishedObject"]:
                 chat_id = getattr(update, 'chat_id', None)
                 if chat_id:
                     logger.info(f"Mahnı bitdi ({type_name}), növbəti yoxlanılır. Chat ID: {chat_id}")
@@ -146,7 +144,7 @@ class RavenPlayer:
         if old_track:
             cleanup_files(old_track.request_id)
 
-        # Növbədə növbəti mahnı (2-6 və ya daha çox) yoxdursa, avtomatik çıxış
+        # Əgər növbədə mahnı yoxdursa, avtomatik səsli çatdan çıx
         if not queues[chat_id]:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
@@ -169,11 +167,11 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
-            # DONMASIZ OPTİMAL SƏS REJİMİ
+            # DÜZƏLİŞ: video_parameters=None hissəsi tamamilə silindi!
+            # Yalnız audio_parameters ötürülür ki, versiya xətası verməsin və 0 donma ilə işləsin.
             stream = MediaStream(
                 track.file_path,
-                audio_parameters=AudioQuality.MEDIUM,
-                video_parameters=None
+                audio_parameters=AudioQuality.MEDIUM
             )
 
             await self.calls.play(chat_id, stream)
