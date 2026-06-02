@@ -1,6 +1,6 @@
 pyrogram==2.0.106
 tgcrypto
-pytgcalls==3.0.0.dev30
+pytgcalls==3.0.0.dev24
 fastapi
 uvicorn
 python-dotenv
