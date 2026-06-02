@@ -9,4 +9,4 @@ httpx
 aiohttp
 aiofiles
 pillow
-py-tgcalls=2.1.0
+py-tgcalls==2.1.0
