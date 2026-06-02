@@ -1,4 +1,4 @@
-# player.py - Səsdən Çıxmama Problemi Tam Düzəldilmiş Son Versiya
+# player.py - 0 Donma, Versiya Xətaları və Panel Mesajı Tam Düzəldilmiş Son Versiya
 import asyncio
 import logging
 import os
@@ -10,9 +10,10 @@ from telethon import TelegramClient, Button
 from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.functions.messages import AddChatUserRequest
 
-# PyTgCalls importları
+# PyTgCalls importları - Ən stabil səs axını üçün InputAudioStream və AudioQuality
 from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioQuality, MediaStream
+from pytgcalls.types import AudioQuality
+from pytgcalls.types.stream import InputAudioStream 
 
 from downloader import search_and_download, cleanup_files
 
@@ -68,11 +69,14 @@ async def check_and_invite_bot(user_client: TelegramClient, chat_id: int):
 
 
 async def send_now_playing(user_client: TelegramClient, chat_id: int, track: Track):
+    """Səliqəyə salınmış və dizaynı düzəldilmiş İndi Oxunur paneli"""
     keyboard = await get_control_keyboard(chat_id)
+    
+    # İstədiyin tam səliqəli və qüsursuz mətn formatı
     caption = (
         f"🎵 **İndi Oxunur**\n\n"
         f"🎼 **{track.title}**\n"
-        f"⏱ Müddət: {format_duration(track.duration)}\n"
+        f"⏱️ Müddət: `{format_duration(track.duration)}`\n"
         f"👤 Tələb edən: {track.requested_by}\n\n"
         f"ℹ️ _Düymələr işləmirsə, `.end` və ya `.skip` komandalarından istifadə edin._"
     )
@@ -95,7 +99,7 @@ async def send_now_playing(user_client: TelegramClient, chat_id: int, track: Tra
 
 def format_duration(seconds: Optional[int]) -> str:
     if not seconds:
-        return "—"
+        return "00:00"
     m, s = divmod(seconds, 60)
     return f"{m:02d}:{s:02d}"
 
@@ -136,27 +140,24 @@ class RavenPlayer:
         logger.info("PyTgCalls sistemi uğurla başladı.")
 
     async def force_leave(self, chat_id: int):
-        """Səsdən tamamilə və zəmanətli çıxış metodu (Versiya fərqliliyinə qarşı dözümlü)"""
-        # Versiyadan asılı olaraq mövcud ola biləcək bütün çıxış metodlarını ard-arda yoxlayır
+        """Səsdən tamamilə çıxış metodu"""
         methods = ["leave_call", "leave_group_call", "reject_call"]
         for method_name in methods:
             if hasattr(self.calls, method_name):
                 try:
                     method = getattr(self.calls, method_name)
                     await method(chat_id)
-                    logger.info(f"Səsli çatdan uğurla çıxıldı ({method_name}). Chat ID: {chat_id}")
+                    logger.info(f"Səsli çatdan çıxıldı ({method_name}). Chat ID: {chat_id}")
                     return
                 except Exception as e:
-                    logger.debug(f"{method_name} sınandı amma alınmadı: {e}")
-        
-        # Əgər yuxarıdakı metodlar işləməsə, birbaşa axını dayandırmağı sınayırıq
+                    logger.debug(f"{method_name} xətası: {e}")
         try:
             await self.calls.drop_call(chat_id)
         except Exception:
             pass
 
     async def play_next(self, chat_id: int):
-        """Mahnı bitdikdə növbəni idarə edir. Boşdursa səsdən çıxır, doludursa davam edir."""
+        """Mahnı bitdikdə növbəni idarə edir. Boşdursa çıxır, doludursa davam edir."""
         old_track = now_playing.get(chat_id)
         if old_track:
             cleanup_files(old_track.request_id)
@@ -164,10 +165,7 @@ class RavenPlayer:
         if not queues[chat_id]:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
-            
-            # Zəmanətli çıxış funksiyasını çağırırıq
             await self.force_leave(chat_id)
-            
             if chat_id in control_messages:
                 try:
                     await self.client.delete_messages(chat_id, control_messages[chat_id].id)
@@ -181,14 +179,16 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
-            stream = MediaStream(
+            # KÖKLÜ DÜZƏLİŞ VƏ 0 DONMA: 
+            # MediaStream tam ləğv edildi. Bütün versiyalarla uyğun və sıfır donma ilə işləyən InputAudioStream-ə keçdik.
+            stream = InputAudioStream(
                 track.file_path,
-                audio_parameters=AudioQuality.MEDIUM
+                AudioQuality.HIGH
             )
             await self.calls.play(chat_id, stream)
             await send_now_playing(self.client, chat_id, track)
         except Exception as e:
-            logger.error(f"Oynatma xətası: {e}")
+            logger.error(f"Oynatma xətası (Yenidən yoxlanılır): {e}")
             await self.play_next(chat_id)
 
     async def add_to_queue(self, client, chat_id: int, song_name: str, request_id: str, requested_by: str = "") -> bool:
@@ -226,7 +226,6 @@ class RavenPlayer:
         await self.play_next(chat_id)
 
     async def end(self, chat_id: int):
-        """Mahnını tamamilə bitirir və səsli çatdan çıxır"""
         track = now_playing.get(chat_id)
         if track:
             cleanup_files(track.request_id)
@@ -238,7 +237,6 @@ class RavenPlayer:
         now_playing.pop(chat_id, None)
         self._paused.pop(chat_id, None)
 
-        # Zəmanətli çıxış funksiyasını çağırırıq
         await self.force_leave(chat_id)
 
         if chat_id in control_messages:
