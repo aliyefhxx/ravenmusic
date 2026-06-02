@@ -1,4 +1,4 @@
-# player.py - Tam Avtomatlaşdırılmış Səs Sistemi (0 Donma, Avto-Çıxış və Yedək Komanda Dəstəyi)
+# player.py - PytgCalls Versiya Xətası və Donmaları Tam Düzəldilmiş Versiya
 import asyncio
 import logging
 import os
@@ -9,8 +9,11 @@ from typing import Optional
 from telethon import TelegramClient, Button
 from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.functions.messages import AddChatUserRequest
+
+# PyTgCalls importları
 from pytgcalls import PyTgCalls
 from pytgcalls.types import AudioQuality, MediaStream
+from pytgcalls.types.stream import StreamBacked  # Axının bitməsini tutmaq üçün
 
 from downloader import search_and_download, cleanup_files
 
@@ -51,23 +54,20 @@ async def get_control_keyboard(chat_id: int, paused: bool = False):
 
 
 async def check_and_invite_bot(user_client: TelegramClient, chat_id: int):
-    """Əgər köməkçi bot qrupda yoxdursa, userbot onu avtomatik qrupa dəvət edir"""
+    """Köməkçi bot qrupda yoxdursa avtomatik dəvət edir"""
     try:
-        # Chat obyektinin tipini yoxlayırıq (Normal qrup yoxsa Superqrup/Kanal)
         entity = await user_client.get_input_entity(chat_id)
         from main import BOT_USERNAME
         
-        logger.info(f"Köməkçi bot ({BOT_USERNAME}) {chat_id} qrupuna avtomatik əlavə edilir...")
         if hasattr(entity, 'channel_id'):
             await user_client(InviteToChannelRequest(channel=entity, users=[BOT_USERNAME]))
         else:
             await user_client(AddChatUserRequest(chat_id=chat_id, user_id=BOT_USERNAME, fwd_limit=0))
     except Exception as e:
-        logger.warning(f"Bot avtomatik əlavə edilə bilmədi (İcazə yoxdur və ya bot artıq qrupdadır): {e}")
+        logger.warning(f"Bot avtomatik əlavə edilə bilmədi və ya artıq qrupdadır: {e}")
 
 
 async def send_now_playing(user_client: TelegramClient, chat_id: int, track: Track):
-    """Nəzarət panelini ekrana çıxarır"""
     keyboard = await get_control_keyboard(chat_id)
     caption = (
         f"🎵 **İndi Oxunur**\n\n"
@@ -107,12 +107,15 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # PyTgCalls v2 üçün avtomatik növbəti mahnıya keçid hadisəsi (Event Handler)
-        @self.calls.on_stream_end()
-        async def stream_end_handler(chat_id: int, stream):
-            logger.info(f"Mahnı bitdi, növbəti yoxlanılır. Chat ID: {chat_id}")
-            # Asinxron dövr daxilində növbəti mahnını tetikləyirik
-            asyncio.create_task(self.play_next(chat_id))
+        # KRİTİK DÜZƏLİŞ: on_stream_end() yerinə rəsmi on_update() handlerindən istifadə edirik.
+        # Bu, versiya fərqliliyindən yaranan çökməni tamamilə həll edir.
+        @self.calls.on_update()
+        async def update_handler(client, update):
+            # Əgər gələn yenilənmə axının (mahnının) bitdiyini göstərirsə
+            if isinstance(update, StreamBacked):
+                chat_id = update.chat_id
+                logger.info(f"Mahnı bitdi (StreamBacked), növbəti yoxlanılır. Chat ID: {chat_id}")
+                asyncio.create_task(self.play_next(chat_id))
 
         # Telethon yeniləmə filtri
         orig_dispatch = self.client._dispatch_update
@@ -130,23 +133,21 @@ class RavenPlayer:
 
     async def start(self):
         await self.calls.start()
-        logger.info("PyTgCalls sistemi başladı.")
+        logger.info("PyTgCalls sistemi uğurla başladı.")
 
     async def play_next(self, chat_id: int):
-        """Mahnı bitdikdə növbəni yoxlayır, yoxdursa səsdən tamamilə çıxır!"""
-        # Cari ifa olunan faylı təmizləyirik
+        """Mahnı bitdikdə növbəni idarə edir. Boşdursa səsdən çıxır, doludursa davam edir."""
         old_track = now_playing.get(chat_id)
         if old_track:
             cleanup_files(old_track.request_id)
 
-        # Əgər növbədə ard-arda mahnı YOXDURSA, səsdən çıx!
+        # Əgər növbədə mahnı yoxdursa, avtomatik səsli çatdan çıx
         if not queues[chat_id]:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
             try:
-                # Səsli çatdan tamamilə çıxış (Avtomatik çıxış rejimi)
                 await self.calls.reject_call(chat_id)
-                logger.info(f"Növbə boşdur, səsli çatdan avtomatik çıxıldı. Chat ID: {chat_id}")
+                logger.info(f"Növbə bitdi, səsli çatdan təmiz çıxış edildi. Chat ID: {chat_id}")
             except Exception:
                 pass
             if chat_id in control_messages:
@@ -157,13 +158,13 @@ class RavenPlayer:
                     pass
             return
 
-        # Əgər növbədə mahnı VARSA (2-6 fərq etmir), davam et!
+        # Növbədə mahnı varsa, donmasız rejimdə işə sal
         track: Track = queues[chat_id].pop(0)
         now_playing[chat_id] = track
         self._paused[chat_id] = False
 
         try:
-            # DONMASIZ AXIN: Video ləğv edildi, bitreyt tam optimallaşdırıldı
+            # DONMASIZ ABSOLYUT REJİM: Yalnız təmiz audio ötürülür, video buferi tam ləğv edildi
             stream = MediaStream(
                 track.file_path,
                 audio_parameters=AudioQuality.MEDIUM,
@@ -178,11 +179,9 @@ class RavenPlayer:
             await self.play_next(chat_id)
 
     async def add_to_queue(self, client, chat_id: int, song_name: str, request_id: str, requested_by: str = "") -> bool:
-        """Mahnını növbəyə salır"""
         if active_searches[chat_id] >= MAX_QUEUE:
             return False
 
-        # İlk öncə botun qrupda olub-olmadığını yoxlayıb, yoxdursa əlavə edirik
         await check_and_invite_bot(self.client, chat_id)
 
         active_searches[chat_id] += 1
