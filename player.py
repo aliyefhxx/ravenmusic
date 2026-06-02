@@ -1,4 +1,4 @@
-# player.py - Ses idarəetməsi (Telethon + pytgcalls v2 tam uyğun)
+# player.py - Ses idarəetmete sistemi (PyTgCalls v2 Tam Stabil)
 import asyncio
 import logging
 import os
@@ -8,7 +8,9 @@ from typing import Optional
 
 from telethon import TelegramClient, Button
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality, VideoQuality
+from pytgcalls.types import AudioQuality, VideoQuality
+from pytgcalls.types.stream import InputAudioStream, InputVideoStream
+from pytgcalls.types.input_folder import File
 
 from downloader import search_and_download, cleanup_files
 
@@ -124,7 +126,6 @@ class RavenPlayer:
             now_playing.pop(chat_id, None)
             self._paused.pop(chat_id, None)
             try:
-                # pytgcalls v2-də leave yerinə reject_call istifadə olunur
                 await self.calls.reject_call(chat_id)
             except Exception:
                 pass
@@ -141,20 +142,26 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
+            # Səsin gəlməsi üçün tam və qəti ffmpeg stream generatoru
+            audio_stream = InputAudioStream(
+                File(track.file_path),
+                AudioQuality.HIGH
+            )
+            
+            video_stream = None
             if track.thumbnail and os.path.exists(track.thumbnail):
-                stream = MediaStream(
-                    track.file_path,
-                    audio_parameters=AudioQuality.HIGH,
-                    video_parameters=VideoQuality.THUMBNAIL
-                )
-            else:
-                stream = MediaStream(
-                    track.file_path,
-                    audio_parameters=AudioQuality.HIGH
+                video_stream = InputVideoStream(
+                    File(track.thumbnail),
+                    VideoQuality.THUMBNAIL
                 )
 
-            # pytgcalls v2-də həm qoşulmaq, həm də yayımı dəyişmək üçün sadəcə .play() bəs edir!
-            await self.calls.play(chat_id, stream)
+            # PyTgCalls v2 formatında təmiz play başladılması
+            await self.calls.play(
+                chat_id,
+                audio_stream,
+                video_stream
+            )
+            
             await send_now_playing(self.client, chat_id, track)
 
         except Exception as e:
