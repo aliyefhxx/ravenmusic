@@ -9,11 +9,12 @@ from typing import Optional
 from pyrogram import Client
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pytgcalls import PyTgCalls
-from pytgcalls.types.input_stream import (
+from pytgcalls.types import (
     AudioPiped,
     AudioImagePiped,
     AudioParameters
 )
+
 
 from downloader import search_and_download, cleanup_files
 
