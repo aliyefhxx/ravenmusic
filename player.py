@@ -9,11 +9,8 @@ from typing import Optional
 from pyrogram import Client
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pytgcalls import PyTgCalls
-from pytgcalls.types import (
-    AudioPiped,
-    AudioImagePiped,
-    AudioParameters
-)
+from pytgcalls.types import MediaStream
+from pytgcalls.types.quality import HighQualityAudio, HighQualityVideo
 
 
 from downloader import search_and_download, cleanup_files
@@ -86,7 +83,7 @@ async def send_now_playing(client: Client, chat_id: int, track: Track):
         else:
             msg = await client.send_message(
                 chat_id,
-                caption,
+                text=caption,
                 reply_markup=keyboard
             )
         control_messages[chat_id] = msg
@@ -134,25 +131,26 @@ class RavenPlayer:
 
         try:
             if track.thumbnail and os.path.exists(track.thumbnail):
-                stream = AudioImagePiped(
+                stream = MediaStream(
                     track.file_path,
-                    track.thumbnail,
-                    audio_parameters=AudioParameters(bitrate=128)
+                    audio_parameters=HighQualityAudio(),
+                    video_parameters=HighQualityVideo(),
+                    video_flags=MediaStream.Flags.HAS_VIDEO
                 )
             else:
-                stream = AudioPiped(
+                stream = MediaStream(
                     track.file_path,
-                    audio_parameters=AudioParameters(bitrate=128)
+                    audio_parameters=HighQualityAudio(),
+                    video_flags=MediaStream.Flags.NO_VIDEO
                 )
 
-            # Aktiv call varsa change_stream, yoxdursa join
+            # Aktiv call varsa change_stream, yoxdursa join (v2-də stream_type ləğv edilib)
             try:
                 await self.calls.change_stream(chat_id, stream)
             except Exception:
                 await self.calls.join_group_call(
                     chat_id,
-                    stream,
-                    stream_type=None
+                    stream
                 )
 
             await send_now_playing(self.client, chat_id, track)
