@@ -63,7 +63,6 @@ async def send_now_playing(client: TelegramClient, chat_id: int, track: Track):
     )
 
     try:
-        # Köhnə control mesajını sil
         if chat_id in control_messages:
             try:
                 await client.delete_messages(chat_id, control_messages[chat_id].id)
@@ -101,13 +100,13 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # Səhv daxili yeniləmələri filtrləmək üçün süzgəci tam düzgün arqumentlərlə yenilədik
+        # MÜTLƏQ HƏLL: Arqument xətalarını kökündən kəsmək üçün dinamik süzgəc
         orig_dispatch = self.client._dispatch_update
-        async def safe_dispatch(update, others):
-            if type(update).__name__ == 'UpdateGroupCall' and not hasattr(update, 'chat_id'):
+        async def safe_dispatch(*args, **kwargs):
+            if args and type(args[0]).__name__ == 'UpdateGroupCall' and not hasattr(args[0], 'chat_id'):
                 return
             try:
-                await orig_dispatch(update, others)
+                await orig_dispatch(*args, **kwargs)
             except Exception:
                 pass
         self.client._dispatch_update = safe_dispatch
