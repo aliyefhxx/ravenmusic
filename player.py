@@ -100,13 +100,17 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # MÜTLƏQ HƏLL: Arqument xətalarını kökündən kəsmək üçün dinamik süzgəc
+        # DƏQİQ SÜZGƏC: Sadəcə chat_id-si olmayan xətalı UpdateGroupCall obyektini sıfırlayır,
+        # digər mesaj yeniləmələrinə (NewMessage, .play və s.) əsla mane olmur.
         orig_dispatch = self.client._dispatch_update
-        async def safe_dispatch(*args, **kwargs):
-            if args and type(args[0]).__name__ == 'UpdateGroupCall' and not hasattr(args[0], 'chat_id'):
+        async def safe_dispatch(update, others=None):
+            if type(update).__name__ == 'UpdateGroupCall' and not hasattr(update, 'chat_id'):
                 return
             try:
-                await orig_dispatch(*args, **kwargs)
+                if others is not None:
+                    await orig_dispatch(update, others)
+                else:
+                    await orig_dispatch(update)
             except Exception:
                 pass
         self.client._dispatch_update = safe_dispatch
