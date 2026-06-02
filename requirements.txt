@@ -1,0 +1,12 @@
+pyrogram==2.0.106
+tgcrypto
+pytgcalls==3.0.0.dev30
+fastapi
+uvicorn
+python-dotenv
+yt-dlp
+mutagen
+httpx
+aiohttp
+aiofiles
+pillow
