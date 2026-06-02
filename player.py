@@ -6,8 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
 
-from telethon import TelegramClient
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from telethon import TelegramClient, Button
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream
 
@@ -19,8 +18,8 @@ logger = logging.getLogger(__name__)
 queues: dict[int, list] = defaultdict(list)
 # Cari oynanılan
 now_playing: dict[int, dict] = {}
-# Control mesajları (inline button olan)
-control_messages: dict[int, Message] = {}
+# Control mesajları
+control_messages: dict[int, any] = {}
 # Aktiv axtarış sayı (max 10)
 active_searches: dict[int, int] = defaultdict(int)
 
@@ -38,22 +37,23 @@ class Track:
     requested_by: str = ""
 
 
-async def get_control_keyboard(chat_id: int, paused: bool = False) -> InlineKeyboardMarkup:
+async def get_control_keyboard(chat_id: int, paused: bool = False):
     play_pause = "⏸ Durdur" if not paused else "▶️ Davam"
-    return InlineKeyboardMarkup([
+    # Düymələr Telethon rəsmi formatına keçirildi
+    return [
         [
-            InlineKeyboardButton("⏮ Geri", callback_data=f"prev_{chat_id}"),
-            InlineKeyboardButton(play_pause, callback_data=f"pause_{chat_id}"),
-            InlineKeyboardButton("⏭ İrəli", callback_data=f"skip_{chat_id}"),
+            Button.inline("⏮ Geri", data=f"prev_{chat_id}"),
+            Button.inline(play_pause, data=f"pause_{chat_id}"),
+            Button.inline("⏭ İrəli", data=f"skip_{chat_id}"),
         ],
         [
-            InlineKeyboardButton("🔇 Bitir", callback_data=f"end_{chat_id}"),
-            InlineKeyboardButton("❌ Bağla", callback_data=f"close_{chat_id}"),
+            Button.inline("🔇 Bitir", data=f"end_{chat_id}"),
+            Button.inline("❌ Bağla", data=f"close_{chat_id}"),
         ]
-    ])
+    ]
 
 
-async def send_now_playing(client, chat_id: int, track: Track):
+async def send_now_playing(client: TelegramClient, chat_id: int, track: Track):
     """İnline buttonlarla 'İndi oxunur' mesajı göndər"""
     keyboard = await get_control_keyboard(chat_id)
     caption = (
@@ -67,11 +67,10 @@ async def send_now_playing(client, chat_id: int, track: Track):
         # Köhnə control mesajını sil
         if chat_id in control_messages:
             try:
-                await control_messages[chat_id].delete()
+                await client.delete_messages(chat_id, control_messages[chat_id].id)
             except Exception:
                 pass
 
-        # Telethon client-ı ilə mesaj göndərmə dəstəyi
         if track.thumbnail and os.path.exists(track.thumbnail):
             msg = await client.send_file(
                 chat_id,
@@ -100,7 +99,6 @@ def format_duration(seconds: Optional[int]) -> str:
 class RavenPlayer:
     def __init__(self, client: TelegramClient):
         self.client = client
-        # pytgcalls v2-ni Telethon client-ı ilə işə salırıq
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
@@ -119,7 +117,7 @@ class RavenPlayer:
                 pass
             if chat_id in control_messages:
                 try:
-                    await control_messages[chat_id].delete()
+                    await self.client.delete_messages(chat_id, control_messages[chat_id].id)
                     control_messages.pop(chat_id, None)
                 except Exception:
                     pass
@@ -142,7 +140,6 @@ class RavenPlayer:
                     video_flags=MediaStream.Flags.NO_VIDEO
                 )
 
-            # Aktiv call varsa change_stream, yoxdursa join
             try:
                 await self.calls.change_stream(chat_id, stream)
             except Exception:
@@ -171,6 +168,7 @@ class RavenPlayer:
 
         active_searches[chat_id] += 1
         try:
+            # downloader.py faylından mahnını tam çəkirik
             result = await search_and_download(client, song_name, request_id)
             if not result or not result["file_path"]:
                 return False
@@ -187,7 +185,6 @@ class RavenPlayer:
 
             queues[chat_id].append(track)
 
-            # Əgər hal-hazırda heç nə oxunmursa, başlat
             if chat_id not in now_playing or not now_playing.get(chat_id):
                 await self.play_next(chat_id)
 
@@ -196,19 +193,16 @@ class RavenPlayer:
             active_searches[chat_id] -= 1
 
     async def skip(self, chat_id: int):
-        """Növbəti mahnıya keç"""
         track = now_playing.get(chat_id)
         if track:
             cleanup_files(track.request_id)
         await self.play_next(chat_id)
 
     async def end(self, chat_id: int):
-        """Oxumağı tamamilə dayandır"""
         track = now_playing.get(chat_id)
         if track:
             cleanup_files(track.request_id)
 
-        # Queue-dakı bütün faylları sil
         for t in queues.get(chat_id, []):
             cleanup_files(t.request_id)
         queues[chat_id].clear()
@@ -222,7 +216,7 @@ class RavenPlayer:
 
         if chat_id in control_messages:
             try:
-                await control_messages[chat_id].delete()
+                await self.client.delete_messages(chat_id, control_messages[chat_id].id)
                 control_messages.pop(chat_id, None)
             except Exception:
                 pass
@@ -240,5 +234,4 @@ class RavenPlayer:
         return self._paused.get(chat_id, False)
 
     async def prev(self, chat_id: int):
-        """Əvvəlki mahnıya qayıt (bu versiyada skip kimi işləyir)"""
         await self.skip(chat_id)
