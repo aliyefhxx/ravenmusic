@@ -101,8 +101,7 @@ class RavenPlayer:
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
-        # Telethon-un daxili "UpdateGroupCall" çatışmazlıq xətasını (chat_id xətası)
-        # arxa planda süzgəcdən keçirmək üçün raw yeniləmə funksiyasını manipulyasiya edirik.
+        # Səhv daxili yeniləmələri filtrləmək üçün süzgəci tam düzgün arqumentlərlə yenilədik
         orig_dispatch = self.client._dispatch_update
         async def safe_dispatch(update, others):
             if type(update).__name__ == 'UpdateGroupCall' and not hasattr(update, 'chat_id'):
@@ -139,8 +138,6 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
-            # NO_VIDEO flag-i yerinə, AudioQuality və VideoQuality parametrlərini təyin edirik.
-            # Əgər video yoxdursa, video parametrini boş buraxırıq ki, NO_VIDEO xətası verməsin.
             if track.thumbnail and os.path.exists(track.thumbnail):
                 stream = MediaStream(
                     track.file_path,
