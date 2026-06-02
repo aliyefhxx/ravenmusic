@@ -9,5 +9,4 @@ httpx
 aiohttp
 aiofiles
 pillow
-
-pytgcalls==3.0.0.dev24
+pytgcalls==0.9.3
