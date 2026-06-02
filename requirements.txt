@@ -10,3 +10,4 @@ aiohttp
 aiofiles
 pillow
 py-tgcalls==2.0.0
+ntgcalls==2.2.1b3
