@@ -9,5 +9,4 @@ httpx
 aiohttp
 aiofiles
 pillow
-
-git+https://github.com/pytgcalls/pytgcalls.git
+py-tgcalls=2.1.0
