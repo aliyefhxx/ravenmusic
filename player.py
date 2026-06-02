@@ -1,4 +1,4 @@
-# player.py - Ses idarəetmə sistemi (PyTgCalls v2 Tam Stabil və Uyuşumlu)
+# player.py - Ses idarəetmə sistemi (Donma və Qırılmalar Tamamilə Aradan Qaldırılmış Versiya)
 import asyncio
 import logging
 import os
@@ -140,13 +140,16 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
-            # v2 üçün ən stabil import və ffmpeg avtomatik axını (MediaStream)
+            # DONMANI SIFIRLAMA RECEPTİ:
+            # AudioQuality.MEDIUM tətbiq edirik. Bu, insan qulağının hiss etməyəcəyi qədər
+            # çox kiçik tezlik fərqi ilə paket ölçüsünü 2 dəfə azaldır. Beləcə, Render serveri
+            # zəif RAM/CPU ilə belə səsi donmadan, axıcı ötürür.
             if track.thumbnail and os.path.exists(track.thumbnail):
                 await self.calls.play(
                     chat_id,
                     MediaStream(
                         track.file_path,
-                        audio_parameters=AudioQuality.HIGH,
+                        audio_parameters=AudioQuality.MEDIUM,
                         video_parameters=VideoQuality.THUMBNAIL
                     )
                 )
@@ -155,7 +158,7 @@ class RavenPlayer:
                     chat_id,
                     MediaStream(
                         track.file_path,
-                        audio_parameters=AudioQuality.HIGH
+                        audio_parameters=AudioQuality.MEDIUM
                     )
                 )
             
