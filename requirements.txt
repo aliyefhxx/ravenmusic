@@ -1,6 +1,5 @@
 pyrogram==2.0.106
-tgcrypto==1.2.5
-
+tgcrypto
 fastapi
 uvicorn
 python-dotenv
@@ -10,5 +9,4 @@ httpx
 aiohttp
 aiofiles
 pillow
-
-pytgcalls==2.0.0
+py-tgcalls==2.1.0
