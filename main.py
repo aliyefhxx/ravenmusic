@@ -1,4 +1,4 @@
-# main.py - Raven Music (Userbot + Bot Token Birgə İşlək Versiya)
+# main.py - Raven Music (Userbot + Bot Token Tam Hazır və İnteqrasiyalı Versiya)
 import asyncio
 import logging
 import os
@@ -26,18 +26,17 @@ logger = logging.getLogger("RavenMusic")
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 SESSION_STRING = os.environ["SESSION_STRING"]
-BOT_TOKEN = os.environ["BOT_TOKEN"]  # Sənin əlavə etdiyin Bot Token
+BOT_TOKEN = os.environ["BOT_TOKEN"]  # Render və ya .env daxilindəki Bot Token
 PORT = int(os.environ.get("PORT", 8000))
 
-# ── Telethon Userbot Client (Səsə girmək üçün) ────────────────────
+# ── Telethon Userbot Client (Səsli çata qoşulmaq üçün) ────────────
 userbot = TelegramClient(
     StringSession(SESSION_STRING),
     api_id=API_ID,
     api_hash=API_HASH,
 )
 
-# ── Telethon Bot Client (Düymələrin kliklənməsi üçün) ─────────────
-# Bot tokeni daxil edirik ki, inline button xətası tamamilə həll olunsun
+# ── Telethon Bot Client (İnline düymələri chata göndərib oxumaq üçün) ──
 tg_bot = TelegramClient(
     "raven_bot_session",
     api_id=API_ID,
@@ -49,13 +48,13 @@ player: RavenPlayer | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  KOMANDALAR (Userbot qrupda yazılanları dinləyir)
+#  KOMANDALAR (Userbot qrupdakı yazışmaları dinləyir)
 # ═══════════════════════════════════════════════════════════════════
 
 @userbot.on(events.NewMessage(pattern=r"^\.play(?:\s+(.+))?"))
 async def play_command(event: events.NewMessage.Event):
     """
-    .play mahnı adı
+    .play mahnı adı (Qrupda hər kəs yaza bilər)
     """
     song_name = event.pattern_match.group(1)
     if not song_name:
@@ -70,15 +69,15 @@ async def play_command(event: events.NewMessage.Event):
     if sender:
         requested_by = getattr(sender, 'first_name', 'Naməlum')
 
-    # Queue dolubsa xəbərdarlıq
+    # Queue dolubsa xəbərdarlıq (Maksimum 10 mahnı)
     if len(queues[chat_id]) >= 10:
-        await event.respond("⚠️ Queue doludur! Maksimum 10 mahnı.")
+        await event.respond("⚠️ Növbə (Queue) doludur! Maksimum 10 mahnı əlavə edilə bilər.")
         return
 
-    status_msg = await event.respond(f"🔍 **{song_name}** axtarılır...")
+    status_msg = await event.respond(f"🔍 **{song_name}** axtarılır və yüklənir...")
     request_id = str(uuid.uuid4())[:8]
 
-    # Telethon client-ı (userbot) pleyerə ötürülür
+    # Həm yükləmə prosesini başladır, həm də pleyerə qoşulur
     success = await player.add_to_queue(
         userbot,
         chat_id,
@@ -94,29 +93,27 @@ async def play_command(event: events.NewMessage.Event):
             pass
     else:
         await status_msg.edit(
-            f"❌ **{song_name}** tapılmadı və ya yüklənmədi."
+            f"❌ **{song_name}** tapılmadı və ya yüklənmə xətası baş verdi."
         )
 
 
 @userbot.on(events.NewMessage(pattern=r"^\.end"))
 async def end_command(event: events.NewMessage.Event):
-    """.end - oxumanı dayandır"""
+    """.end - səsli çatdan tamamilə çıxış və təmizləmə"""
     chat_id = event.chat_id
 
     if chat_id not in now_playing:
-        await event.respond("🔇 Hazırda heç nə oxunmur.")
+        await event.respond("🔇 Hazırda səsli çatda aktiv mahnı oxunmur.")
         return
 
     await player.end(chat_id)
-    await event.respond("⏹ Oxuma dayandırıldı, səsli chatdan çıxıldı.")
+    await event.respond("⏹ Oxuma dayandırıldı, növbə təmizləndi və səsli çatdan çıxıldı.")
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  INLINE BUTTON CALLBACKLAR (Bot Token vasitəsilə idarə olunur)
+#  INLINE BUTTON CALLBACKLAR (Köməkçi Bot tərəfindən idarə olunur)
 # ═══════════════════════════════════════════════════════════════════
 
-# QEYD: Düymə kliklərini artıq userbot yox, tg_bot qəbul edir. 
-# Bu, Telegram-ın təhlükəsizlik qaydasıdır.
 @tg_bot.on(events.CallbackQuery)
 async def callback_handler(event: events.CallbackQuery.Event):
     data = event.data.decode("utf-8") if isinstance(event.data, bytes) else event.data
@@ -135,46 +132,45 @@ async def callback_handler(event: events.CallbackQuery.Event):
     elif data.startswith("skip_"):
         chat_id = int(data.split("_")[1])
         await player.skip(chat_id)
-        await event.answer("⏭ Keçildi")
+        await event.answer("⏭ Növbəti mahnıya keçildi")
 
     elif data.startswith("prev_"):
         chat_id = int(data.split("_")[1])
         await player.prev(chat_id)
-        await event.answer("⏮ Əvvəlki")
+        await event.answer("⏮ Yenidən başladılır / Keçilir")
 
     elif data.startswith("end_"):
         chat_id = int(data.split("_")[1])
         await player.end(chat_id)
-        await event.answer("⏹ Dayandırıldı")
+        await event.answer("⏹ Dayandırıldı və Çatdan Çıxıldı")
 
     elif data.startswith("close_"):
         try:
             await event.delete()
         except Exception:
             pass
-        await event.answer("❌ Bağlandı")
+        await event.answer("❌ İdarəetmə paneli bağlandı")
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  ANA FUNKSIYA
+#  SISTEMİN BAŞLADILMASI
 # ═══════════════════════════════════════════════════════════════════
 
 async def start_userbot():
     global player
     
-    # 1. Həm userbotu, həm köməkçi botu eyni anda başladırıq
+    # 1. Həm userbot, həm də köməkçi bot paralel olaraq start götürür
     await userbot.start()
     await tg_bot.start(bot_token=BOT_TOKEN)
     
-    # Player daxilinə köməkçi botu da veririk ki, düyməli mesajları bot ata bilsin
-    # Bunun üçün player.py-dakı client-ı tg_bot edə bilərik, amma əsas əmrlər userbotdadır.
-    # Pleyeri userbot ilə başladırıq
-    player = RavenPlayer(userbot)
+    # 2. Player-i başladırıq və daxilinə köməkçi botun client-ını ötürürük
+    player = RavenPlayer(userbot, bot_client=tg_bot)
     await player.start()
     
-    logger.info("🎵 Raven Music Userbot (Telethon) işə düşdü!")
-    logger.info("🤖 Köməkçi Bot (Düymələr üçün) aktivləşdirildi!")
+    logger.info("🎵 Raven Music Userbot (Səs Sistemi) uğurla işə düşdü!")
+    logger.info("🤖 Köməkçi Bot (Düymə və Panel Sistemi) rəsmi olaraq aktivdir!")
 
+    # FastApi/Uvicorn server sazlaması (Render-in sönməməsi üçün)
     config = uvicorn.Config(
         fastapi_app,
         host="0.0.0.0",
@@ -183,7 +179,7 @@ async def start_userbot():
     )
     server = uvicorn.Server(config)
 
-    # Üçünü də eyni anda paralel icra edirik
+    # Uvicorn serveri, userbotu və düymə botunu eyni anda asinxron işlədirik
     await asyncio.gather(
         server.serve(),
         userbot.run_until_disconnected(),
