@@ -1,4 +1,4 @@
-# player.py - Ses idarəetmete sistemi (PyTgCalls v2 Tam Stabil)
+# player.py - Ses idarəetmə sistemi (PyTgCalls v2 Tam Stabil və Uyuşumlu)
 import asyncio
 import logging
 import os
@@ -8,9 +8,7 @@ from typing import Optional
 
 from telethon import TelegramClient, Button
 from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioQuality, VideoQuality
-from pytgcalls.types.stream import InputAudioStream, InputVideoStream
-from pytgcalls.types.input_folder import File
+from pytgcalls.types import AudioQuality, VideoQuality, MediaStream
 
 from downloader import search_and_download, cleanup_files
 
@@ -142,25 +140,24 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
-            # Səsin gəlməsi üçün tam və qəti ffmpeg stream generatoru
-            audio_stream = InputAudioStream(
-                File(track.file_path),
-                AudioQuality.HIGH
-            )
-            
-            video_stream = None
+            # v2 üçün ən stabil import və ffmpeg avtomatik axını (MediaStream)
             if track.thumbnail and os.path.exists(track.thumbnail):
-                video_stream = InputVideoStream(
-                    File(track.thumbnail),
-                    VideoQuality.THUMBNAIL
+                await self.calls.play(
+                    chat_id,
+                    MediaStream(
+                        track.file_path,
+                        audio_parameters=AudioQuality.HIGH,
+                        video_parameters=VideoQuality.THUMBNAIL
+                    )
                 )
-
-            # PyTgCalls v2 formatında təmiz play başladılması
-            await self.calls.play(
-                chat_id,
-                audio_stream,
-                video_stream
-            )
+            else:
+                await self.calls.play(
+                    chat_id,
+                    MediaStream(
+                        track.file_path,
+                        audio_parameters=AudioQuality.HIGH
+                    )
+                )
             
             await send_now_playing(self.client, chat_id, track)
 
