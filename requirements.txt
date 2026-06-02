@@ -10,3 +10,4 @@ httpx
 aiohttp
 aiofiles
 pillow
+Telethon
