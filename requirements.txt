@@ -1,6 +1,5 @@
 pyrogram==2.0.106
 tgcrypto
-pytgcalls==3.0.0.dev24
 fastapi
 uvicorn
 python-dotenv
@@ -10,3 +9,5 @@ httpx
 aiohttp
 aiofiles
 pillow
+
+git+https://github.com/pytgcalls/pytgcalls.git
