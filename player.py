@@ -10,7 +10,6 @@ from pyrogram import Client
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream
-from pytgcalls.types.quality import HighQualityAudio, HighQualityVideo
 
 
 from downloader import search_and_download, cleanup_files
@@ -131,20 +130,19 @@ class RavenPlayer:
 
         try:
             if track.thumbnail and os.path.exists(track.thumbnail):
+                # v2-də birbaşa fayl yollarını vermək kifayətdir, default olaraq yüksək keyfiyyət seçilir
                 stream = MediaStream(
                     track.file_path,
-                    audio_parameters=HighQualityAudio(),
-                    video_parameters=HighQualityVideo(),
+                    track.thumbnail,
                     video_flags=MediaStream.Flags.HAS_VIDEO
                 )
             else:
                 stream = MediaStream(
                     track.file_path,
-                    audio_parameters=HighQualityAudio(),
                     video_flags=MediaStream.Flags.NO_VIDEO
                 )
 
-            # Aktiv call varsa change_stream, yoxdursa join (v2-də stream_type ləğv edilib)
+            # Aktiv call varsa change_stream, yoxdursa join
             try:
                 await self.calls.change_stream(chat_id, stream)
             except Exception:
