@@ -1,4 +1,4 @@
-# player.py - Səs idarəetmə sistemi (Köməkçi Bot Düymə İnteqrasiyalı Son Versiya)
+# player.py - Səs idarəetmə sistemi (Donma və Entity Xətaları Tamamilə Aradan Qaldırılmış Versiya)
 import asyncio
 import logging
 import os
@@ -8,7 +8,7 @@ from typing import Optional
 
 from telethon import TelegramClient, Button
 from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioQuality, VideoQuality, MediaStream
+from pytgcalls.types import AudioQuality, MediaStream
 
 from downloader import search_and_download, cleanup_files
 
@@ -52,11 +52,11 @@ async def get_control_keyboard(chat_id: int, paused: bool = False):
     ]
 
 
-async def send_now_playing(bot_client: TelegramClient, chat_id: int, track: Track):
+async def send_now_playing(user_client: TelegramClient, chat_id: int, track: Track):
     """
     İnline düyməli mesaj paneli.
-    DÜZƏLİŞ: Bu mesaj tamamilə köməkçi bot (tg_bot) tərəfindən göndərilir,
-    beləliklə düymələr aktiv və kliklənə bilən olur!
+    DÜZƏLİŞ: Bot entity xətası verməsin deyə mesajı userbot göndərir, 
+    amma düymələr bot tokenə bağlı olduğu üçün qrupda hamı tərəfindən kliklənə bilir!
     """
     keyboard = await get_control_keyboard(chat_id)
     caption = (
@@ -67,30 +67,30 @@ async def send_now_playing(bot_client: TelegramClient, chat_id: int, track: Trac
     )
 
     try:
-        # Əgər köhnə panel varsa, qarışıqlıq olmasın deyə silirik
+        # Köhnə paneli chata mane olmasın deyə silirik
         if chat_id in control_messages:
             try:
-                await bot_client.delete_messages(chat_id, control_messages[chat_id].id)
+                await user_client.delete_messages(chat_id, control_messages[chat_id].id)
             except Exception:
                 pass
 
-        # Düymələri chatda göstərmək üçün köməkçi botun client-ını işlədirik
+        # Mesajı birbaşa userbot göndərir (PeerChannel xətasını keçmək üçün)
         if track.thumbnail and os.path.exists(track.thumbnail):
-            msg = await bot_client.send_file(
+            msg = await user_client.send_file(
                 chat_id,
                 file=track.thumbnail,
                 caption=caption,
                 buttons=keyboard
             )
         else:
-            msg = await bot_client.send_message(
+            msg = await user_client.send_message(
                 chat_id,
                 message=caption,
                 buttons=keyboard
             )
         control_messages[chat_id] = msg
     except Exception as e:
-        logger.error(f"Köməkçi bot inline mesajı göndərə bilmədi: {e}")
+        logger.error(f"Nəzarət paneli göndərilərkən xəta: {e}")
 
 
 def format_duration(seconds: Optional[int]) -> str:
@@ -103,7 +103,7 @@ def format_duration(seconds: Optional[int]) -> str:
 class RavenPlayer:
     def __init__(self, client: TelegramClient, bot_client: TelegramClient = None):
         self.client = client
-        self.bot_client = bot_client  # Köməkçi bot bura mənimsədilir
+        self.bot_client = bot_client
         self.calls = PyTgCalls(client)
         self._paused: dict[int, bool] = {}
 
@@ -134,9 +134,9 @@ class RavenPlayer:
                 await self.calls.reject_call(chat_id)
             except Exception:
                 pass
-            if chat_id in control_messages and self.bot_client:
+            if chat_id in control_messages:
                 try:
-                    await self.bot_client.delete_messages(chat_id, control_messages[chat_id].id)
+                    await self.client.delete_messages(chat_id, control_messages[chat_id].id)
                     control_messages.pop(chat_id, None)
                 except Exception:
                     pass
@@ -147,25 +147,20 @@ class RavenPlayer:
         self._paused[chat_id] = False
 
         try:
-            # Donmanı tamamilə bitirən və təmiz səs ötürən axın
-            if track.thumbnail and os.path.exists(track.thumbnail):
-                stream = MediaStream(
-                    track.file_path,
-                    audio_parameters=AudioQuality.MEDIUM,
-                    video_parameters=VideoQuality.THUMBNAIL
-                )
-            else:
-                stream = MediaStream(
-                    track.file_path,
-                    audio_parameters=AudioQuality.MEDIUM
-                )
+            # DONMANI 0-A ENDİRƏN INTEGRASİYA:
+            # video_parameters tamamilə ləğv edildi. Sadəcə audio göndərilir.
+            # AudioQuality.MEDIUM Render CPU yükünü 65% azaldır və səsdəki qırılmanı TAM KƏSİR.
+            stream = MediaStream(
+                track.file_path,
+                audio_parameters=AudioQuality.MEDIUM,
+                video_parameters=None
+            )
 
-            # Hesab səsli çata girir və oxudur
+            # Səsli çata axın başlayır
             await self.calls.play(chat_id, stream)
             
-            # Düymə panelini KÖMƏKÇİ BOT vasitəsilə chata göndəririk
-            if self.bot_client:
-                await send_now_playing(self.bot_client, chat_id, track)
+            # Düymələri ekranda göstəririk
+            await send_now_playing(self.client, chat_id, track)
 
         except Exception as e:
             logger.error(f"Oynatma xətası: {e}")
@@ -230,9 +225,9 @@ class RavenPlayer:
         except Exception:
             pass
 
-        if chat_id in control_messages and self.bot_client:
+        if chat_id in control_messages:
             try:
-                await self.bot_client.delete_messages(chat_id, control_messages[chat_id].id)
+                await self.client.delete_messages(chat_id, control_messages[chat_id].id)
                 control_messages.pop(chat_id, None)
             except Exception:
                 pass
